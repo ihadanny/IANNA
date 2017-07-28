@@ -3,7 +3,7 @@ import math
 import gym
 from gym import spaces
 from gym.utils import seeding
-import numpy as np
+import numpy as np, pandas as pd
 import pickle 
 
 logger = logging.getLogger(__name__)
@@ -12,13 +12,6 @@ class IANNAEnv(gym.Env):
 
     def __init__(self):
 
-        # Angle limit set to 2 * theta_threshold_radians so failing observation is still within bounds
-        high = np.array([
-            self.x_threshold * 2,
-            np.finfo(np.float32).max,
-            self.theta_threshold_radians * 2,
-            np.finfo(np.float32).max])
-
         #    e.g. Nintendo Game Controller
         #    - Can be conceptualized as 3 discrete action spaces:
         #        1) Arrow Keys: Discrete 5  - NOOP[0], UP[1], RIGHT[2], DOWN[3], LEFT[4]  - params: min: 0, max: 4
@@ -26,14 +19,38 @@ class IANNAEnv(gym.Env):
         #        3) Button B:   Discrete 2  - NOOP[0], Pressed[1] - params: min: 0, max: 1
         #    - Can be initialized as
         #        MultiDiscrete([ [0,4], [0,1], [0,1] ])
+
+        #        IANNA actions would be:
+        #        1) action_type:            group[0], filter[1]
+        #        2) field_id:               [0..num_of_fields-1]
+        #        3) filter_operator:        EQ[0], GT[1]. LT[2] if the selected field was numeric (maybe change semantics if field is STR?)
+        #        4) filter_decile:          [0..9] the filter operand  
+        #        5) aggregation field_id:   [0..num_of_fields-1] (what do we do if the selected field is also the main field_id?)
+        #        6) aggregation type:       MEAN[0], COUNT[1], SUM[2], MIN[3], MAX[4]
+        self.data = pd.read_csv('data/1.tsv', sep = '\t')
+        self.state = self.data.copy()
+        self.columns = data.columns
+        self.num_rows = self.data.shape[0]
+        self.num_fields = self.data.shape[1]
         
-        self.action_space = spaces.Discrete(2)
-        self.observation_space = spaces.Box(-high, high)
+        self.action_space = spaces.MultiDiscrete([0,1], [0, self.num_fields-1], [0, 2], [0, 9], [0, self.num_fields-1], [0,4])
+        
+        #   Two kinds of valid input:
+        #   Box(-1.0, 1.0, (3,4)) # low and high are scalars, and shape is provided
+        #   Box(np.array([-1.0,-2.0]), np.array([2.0,4.0])) # low and high are arrays of the same shape
+
+        #   IANNA observations would be:
+        #   1) number of records
+        #   2..num_fields) distinct values of every field        
+        
+        low, high = [0], [self.num_rows]
+        desc = data.describe()
+        for col in data.columns:
+            low.append(0)
+            high.append(desc.loc[col])
+        self.observation_space = spaces.Box(low, high)
 
         self._seed()
-        self.viewer = None
-        self.state = None
-
         self.steps_beyond_done = None
 
     def _seed(self, seed=None):
