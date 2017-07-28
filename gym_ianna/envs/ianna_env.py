@@ -3,12 +3,19 @@ import math
 import gym
 from gym import spaces
 from gym.utils import seeding
-import numpy as np, pandas as pd
+import numpy as np, pandas as pd, os
 import pickle 
 
 logger = logging.getLogger(__name__)
 
 class IANNAEnv(gym.Env):
+
+    def get_current_state(self):
+        res = [self.data.shape[0]]
+        dist_counts = self.data.nunique().to_dict()
+        for col in self.columns:
+            res.append(dist_counts[col])
+        return np.array(res)
 
     def __init__(self):
 
@@ -21,19 +28,21 @@ class IANNAEnv(gym.Env):
         #        MultiDiscrete([ [0,4], [0,1], [0,1] ])
 
         #        IANNA actions would be:
-        #        1) action_type:            group[0], filter[1]
+        #        1) action_type:            filter[0], group[1]
         #        2) field_id:               [0..num_of_fields-1]
         #        3) filter_operator:        EQ[0], GT[1]. LT[2] if the selected field was numeric (maybe change semantics if field is STR?)
         #        4) filter_decile:          [0..9] the filter operand  
         #        5) aggregation field_id:   [0..num_of_fields-1] (what do we do if the selected field is also the main field_id?)
         #        6) aggregation type:       MEAN[0], COUNT[1], SUM[2], MIN[3], MAX[4]
-        self.data = pd.read_csv('data/1.tsv', sep = '\t')
-        self.state = self.data.copy()
-        self.columns = data.columns
+        dir = os.path.dirname(__file__)
+        self.filename = os.path.join(dir, '../../data/1.tsv')        
+        self.data = pd.read_csv(self.filename, sep = '\t')
+        self.columns = self.data.columns
+        print(self.columns)
         self.num_rows = self.data.shape[0]
         self.num_fields = self.data.shape[1]
         
-        self.action_space = spaces.MultiDiscrete([0,1], [0, self.num_fields-1], [0, 2], [0, 9], [0, self.num_fields-1], [0,4])
+        self.action_space = spaces.MultiDiscrete([[0,1], [0, self.num_fields-1], [0, 2], [0, 9], [0, self.num_fields-1], [0,4]])
         
         #   Two kinds of valid input:
         #   Box(-1.0, 1.0, (3,4)) # low and high are scalars, and shape is provided
@@ -43,108 +52,28 @@ class IANNAEnv(gym.Env):
         #   1) number of records
         #   2..num_fields) distinct values of every field        
         
-        low, high = [0], [self.num_rows]
-        desc = data.describe()
-        for col in data.columns:
-            low.append(0)
-            high.append(desc.loc[col])
-        self.observation_space = spaces.Box(low, high)
-
-        self._seed()
-        self.steps_beyond_done = None
-
-    def _seed(self, seed=None):
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
+        high = self.get_current_state()
+        low = np.zeros_like(high)
+        self.observation_space = spaces.Box(low, high)        
+    
 
     def _step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
-        state = self.state
-        x, x_dot, theta, theta_dot = state
-        force = self.force_mag if action==1 else -self.force_mag
-        costheta = math.cos(theta)
-        sintheta = math.sin(theta)
-        temp = (force + self.polemass_length * theta_dot * theta_dot * sintheta) / self.total_mass
-        thetaacc = (self.gravity * sintheta - costheta* temp) / (self.length * (4.0/3.0 - self.masspole * costheta * costheta / self.total_mass))
-        xacc  = temp - self.polemass_length * thetaacc * costheta / self.total_mass
-        x  = x + self.tau * x_dot
-        x_dot = x_dot + self.tau * xacc
-        theta = theta + self.tau * theta_dot
-        theta_dot = theta_dot + self.tau * thetaacc
-        self.state = (x,x_dot,theta,theta_dot)
-        done =  x < -self.x_threshold \
-                or x > self.x_threshold \
-                or theta < -self.theta_threshold_radians \
-                or theta > self.theta_threshold_radians
-        done = bool(done)
-
-        if not done:
-            reward = 1.0
-        elif self.steps_beyond_done is None:
-            # Pole just fell!
-            self.steps_beyond_done = 0
-            reward = 1.0
+        col = self.columns[action[1]]
+        if action[0] == 0:
+            print('filter', col)
         else:
-            if self.steps_beyond_done == 0:
-                logger.warning("You are calling 'step()' even though this environment has already returned done = True. You should always call 'reset()' once you receive 'done = True' -- any further steps are undefined behavior.")
-            self.steps_beyond_done += 1
-            reward = 0.0
-
-        return np.array(self.state), reward, done, {}
+            print('group', col)
+        
+        reward = 1.0
+        return self.get_current_state(), reward, False, {}
 
     def _reset(self):
-        self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(4,))
-        self.steps_beyond_done = None
-        return np.array(self.state)
+        self.data = pd.read_csv(self.filename, sep = '\t')
+        return np.array(self.get_current_state())
 
     def _render(self, mode='human', close=False):
-        if close:
-            if self.viewer is not None:
-                self.viewer.close()
-                self.viewer = None
-            return
+        return None
 
-        screen_width = 600
-        screen_height = 400
 
-        world_width = self.x_threshold*2
-        scale = screen_width/world_width
-        carty = 100 # TOP OF CART
-        polewidth = 10.0
-        polelen = scale * 1.0
-        cartwidth = 50.0
-        cartheight = 30.0
 
-        if self.viewer is None:
-            from gym.envs.classic_control import rendering
-            self.viewer = rendering.Viewer(screen_width, screen_height)
-            l,r,t,b = -cartwidth/2, cartwidth/2, cartheight/2, -cartheight/2
-            axleoffset =cartheight/4.0
-            cart = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
-            self.carttrans = rendering.Transform()
-            cart.add_attr(self.carttrans)
-            self.viewer.add_geom(cart)
-            l,r,t,b = -polewidth/2,polewidth/2,polelen-polewidth/2,-polewidth/2
-            pole = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
-            pole.set_color(.8,.6,.4)
-            self.poletrans = rendering.Transform(translation=(0, axleoffset))
-            pole.add_attr(self.poletrans)
-            pole.add_attr(self.carttrans)
-            self.viewer.add_geom(pole)
-            self.axle = rendering.make_circle(polewidth/2)
-            self.axle.add_attr(self.poletrans)
-            self.axle.add_attr(self.carttrans)
-            self.axle.set_color(.5,.5,.8)
-            self.viewer.add_geom(self.axle)
-            self.track = rendering.Line((0,carty), (screen_width,carty))
-            self.track.set_color(0,0,0)
-            self.viewer.add_geom(self.track)
-
-        if self.state is None: return None
-
-        x = self.state
-        cartx = x[0]*scale+screen_width/2.0 # MIDDLE OF CART
-        self.carttrans.set_translation(cartx, carty)
-        self.poletrans.set_rotation(-x[2])
-
-        return self.viewer.render(return_rgb_array = mode=='rgb_array')
