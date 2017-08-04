@@ -43,7 +43,6 @@ class IANNAEnv(gym.Env):
         #   distinct values of every column
         #   grouped_by indication for each column
         
-        
         high = self.get_current_state()
         low = np.zeros_like(high)
         self.observation_space = spaces.Box(low, high)        
