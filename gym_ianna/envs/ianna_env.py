@@ -5,6 +5,22 @@ import numpy as np, pandas as pd, os
 
 logger = logging.getLogger(__name__)
 
+def get_state_rep(df, grouped_by):
+    res = [df.shape[0]]
+    group_cols = [k for k, v in grouped_by.items() if v == 1]
+    if len(group_cols) > 0:
+        num_groups = df[group_cols].drop_duplicates().shape[0]
+    else:
+        num_groups = df.shape[0]
+    res.append(num_groups)
+    dist_counts = df.nunique().to_dict()
+    for col in df.columns:
+        res.append(dist_counts[col])
+    for col in df.columns:
+        res.append(grouped_by[col])
+    return res
+
+
 class IANNAEnv(gym.Env):
 
     metadata = {
@@ -43,26 +59,10 @@ class IANNAEnv(gym.Env):
         #   distinct values of every column
         #   grouped_by indication for each column
         
-        high = self.get_current_state()
+        high = np.array(self.get_current_state(self.data, self.grouped_by))
         low = np.zeros_like(high)
         self.observation_space = spaces.Box(low, high)        
     
-    def get_current_state(self):
-        res = [self.data.shape[0]]
-        group_cols = [k for k, v in self.grouped_by.items() if v == 1]
-        if len(group_cols) > 0:
-            num_groups = self.data[group_cols].drop_duplicates().shape[0]
-        else:
-            num_groups = self.data.shape[0]
-        res.append(num_groups)
-        dist_counts = self.data.nunique().to_dict()
-        for col in self.data.columns:
-            res.append(dist_counts[col])
-        for col in self.data.columns:
-            res.append(self.grouped_by[col])
-        
-        return np.array(res)
-
     def _step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
         operator_type = OPERATOR_TYPE_LOOKUP[action[0]] 
@@ -90,15 +90,16 @@ class IANNAEnv(gym.Env):
                 raise Exception("unknown operator type: " + operator_type)
         
         reward = 1.0
-        return self.get_current_state(), reward, False, {}
+        return np.array(self.get_current_state(self.data, self.grouped_by)), reward, False, {}
 
     def _reset(self):
         self.data = pd.read_csv(self.filename, sep = '\t')
         self.grouped_by = {col: 0 for col in self.data.columns}
         self.history = []
-        return np.array(self.get_current_state())
+        return np.array(self.get_current_state(self.data, self.grouped_by))
 
     def _render(self, mode='human', close=False):
+        print('rendering...')
         group_cols = [k for k, v in self.grouped_by.items() if v == 1]
         print('grouping by:', group_cols)
         print(self.data.nunique().T)

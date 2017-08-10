@@ -1,0 +1,2 @@
+model_checkpoint_path: "ianna-nn-supervised"
+all_model_checkpoint_paths: "ianna-nn-supervised"
