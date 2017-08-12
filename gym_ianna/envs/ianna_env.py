@@ -29,6 +29,26 @@ class IANNAEnv(gym.Env):
     
     def __init__(self):
 
+        
+        #   Two kinds of valid input:
+        #   Box(-1.0, 1.0, (3,4)) # low and high are scalars, and shape is provided
+        #   Box(np.array([-1.0,-2.0]), np.array([2.0,4.0])) # low and high are arrays of the same shape
+
+        #   IANNA observations would be:
+        #   number of records
+        #   number of groups
+        #   distinct values of every column
+        #   grouped_by indication for each column
+        self.filename = os.path.join(os.path.dirname(__file__), '../../data/1.tsv')        
+        print('reading input', self.filename)
+        self.data = pd.read_csv(self.filename, sep = '\t', index_col=0)
+        self.grouped_by = {col: 0 for col in self.data.columns}
+        grouped_by_all = {col: 1 for col in self.data.columns}
+        high = np.array(get_state_rep(self.data, grouped_by_all))
+        low = np.zeros_like(high)
+        print("observation space from", low, "to", high, "expected shape", high.shape)
+        self.observation_space = spaces.Box(low, high)        
+
         #    e.g. Nintendo Game Controller
         #    - Can be conceptualized as 3 discrete action spaces:
         #        1) Arrow Keys: Discrete 5  - NOOP[0], UP[1], RIGHT[2], DOWN[3], LEFT[4]  - params: min: 0, max: 4
@@ -44,24 +64,7 @@ class IANNAEnv(gym.Env):
         #        3) filter_decile:          [0..9] the filter operand  
         #        4) aggregation column_id:  [0..num_of_columns - 1] (what do we do if the selected col is also grouped_by?)
         #        5) aggregation type:       MEAN[0], COUNT[1], SUM[2], MIN[3], MAX[4]
-        dir = os.path.dirname(__file__)
-        self.filename = os.path.join(dir, '../../data/1.tsv')
-        self._reset()
         self.action_space = spaces.MultiDiscrete([[0,2], [0, self.data.columns.size-1], [0, 2], [0, 9], [0, self.data.columns.size-1], [0,4]])
-        
-        #   Two kinds of valid input:
-        #   Box(-1.0, 1.0, (3,4)) # low and high are scalars, and shape is provided
-        #   Box(np.array([-1.0,-2.0]), np.array([2.0,4.0])) # low and high are arrays of the same shape
-
-        #   IANNA observations would be:
-        #   number of records
-        #   number of groups
-        #   distinct values of every column
-        #   grouped_by indication for each column
-        
-        high = np.array(self.get_current_state(self.data, self.grouped_by))
-        low = np.zeros_like(high)
-        self.observation_space = spaces.Box(low, high)        
     
     def _step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
@@ -90,13 +93,18 @@ class IANNAEnv(gym.Env):
                 raise Exception("unknown operator type: " + operator_type)
         
         reward = 1.0
-        return np.array(self.get_current_state(self.data, self.grouped_by)), reward, False, {}
+        obs = np.array(get_state_rep(self.data, self.grouped_by))
+        assert self.observation_space.contains(obs)
+        return obs, reward, False, {}
 
     def _reset(self):
-        self.data = pd.read_csv(self.filename, sep = '\t')
+        print('reading input', self.filename)
+        self.data = pd.read_csv(self.filename, sep = '\t', index_col=0)
         self.grouped_by = {col: 0 for col in self.data.columns}
         self.history = []
-        return np.array(self.get_current_state(self.data, self.grouped_by))
+        obs = np.array(get_state_rep(self.data, self.grouped_by))
+        assert self.observation_space.contains(obs)
+        return obs
 
     def _render(self, mode='human', close=False):
         print('rendering...')
