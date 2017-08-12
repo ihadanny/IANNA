@@ -42,7 +42,6 @@ class IANNAEnv(gym.Env):
         self.filename = os.path.join(os.path.dirname(__file__), '../../data/1.tsv')        
         print('reading input', self.filename)
         self.data = pd.read_csv(self.filename, sep = '\t', index_col=0)
-        self.grouped_by = {col: 0 for col in self.data.columns}
         grouped_by_all = {col: 1 for col in self.data.columns}
         high = np.array(get_state_rep(self.data, grouped_by_all))
         low = np.zeros_like(high)
@@ -66,6 +65,12 @@ class IANNAEnv(gym.Env):
         #        5) aggregation type:       MEAN[0], COUNT[1], SUM[2], MIN[3], MAX[4]
         self.action_space = spaces.MultiDiscrete([[0,2], [0, self.data.columns.size-1], [0, 2], [0, 9], [0, self.data.columns.size-1], [0,4]])
     
+    def _reward(self, obs):
+        for s in self.states_already_seen:
+            if (s == obs).all():
+                return 0.0
+        return 1.0
+        
     def _step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
         operator_type = OPERATOR_TYPE_LOOKUP[action[0]] 
@@ -92,16 +97,22 @@ class IANNAEnv(gym.Env):
             else:
                 raise Exception("unknown operator type: " + operator_type)
         
-        reward = 1.0
         obs = np.array(get_state_rep(self.data, self.grouped_by))
         assert self.observation_space.contains(obs)
-        return obs, reward, False, {}
+        
+        reward = self._reward(obs)
+        self.states_already_seen.append(obs)
+        self.step_num += 1
+        done = self.step_num >= 10
+        return obs, reward, done, {}
 
     def _reset(self):
         print('reading input', self.filename)
         self.data = pd.read_csv(self.filename, sep = '\t', index_col=0)
         self.grouped_by = {col: 0 for col in self.data.columns}
         self.history = []
+        self.states_already_seen = []
+        self.step_num = 0
         obs = np.array(get_state_rep(self.data, self.grouped_by))
         assert self.observation_space.contains(obs)
         return obs
