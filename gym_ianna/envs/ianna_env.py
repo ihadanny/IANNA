@@ -45,7 +45,7 @@ class IANNAEnv(gym.Env):
         grouped_by_all = {col: 1 for col in self.data.columns}
         high = np.array(get_state_rep(self.data, grouped_by_all))
         low = np.zeros_like(high)
-        print("observation space from", low, "to", high, "expected shape", high.shape)
+        print("observation space from", low, "to", high, "shape", high.shape)
         self.observation_space = spaces.Box(low, high)        
 
         #    e.g. Nintendo Game Controller
@@ -64,6 +64,7 @@ class IANNAEnv(gym.Env):
         #        4) aggregation column_id:  [0..num_of_columns - 1] (what do we do if the selected col is also grouped_by?)
         #        5) aggregation type:       MEAN[0], COUNT[1], SUM[2], MIN[3], MAX[4]
         self.action_space = spaces.MultiDiscrete([[0,2], [0, self.data.columns.size-1], [0, 2], [0, 9], [0, self.data.columns.size-1], [0,4]])
+        print("action space", self.action_space)
     
     def _reward(self, obs):
         for s in self.states_already_seen:
@@ -76,7 +77,7 @@ class IANNAEnv(gym.Env):
         operator_type = OPERATOR_TYPE_LOOKUP[action[0]] 
         col = self.data.columns[action[1]]
         if operator_type == 'back':
-            print('back')
+            #print('back')
             if len(self.history) > 0:
                 self.data, self.grouped_by = self.history.pop()
         else:
@@ -92,7 +93,7 @@ class IANNAEnv(gym.Env):
                 else:
                     raise Exception("unknown filter operator: " + filter_operator)
             elif operator_type == 'group':
-                print('group', col)
+                #print('group', col)
                 self.grouped_by[col] = 1
             else:
                 raise Exception("unknown operator type: " + operator_type)
@@ -107,7 +108,7 @@ class IANNAEnv(gym.Env):
         return obs, reward, done, {}
 
     def _reset(self):
-        print('reading input', self.filename)
+        #print('reading input', self.filename)
         self.data = pd.read_csv(self.filename, sep = '\t', index_col=0)
         self.grouped_by = {col: 0 for col in self.data.columns}
         self.history = []
@@ -118,6 +119,8 @@ class IANNAEnv(gym.Env):
         return obs
 
     def _render(self, mode='human', close=False):
+        if close:
+            return None
         print('rendering...')
         group_cols = [k for k, v in self.grouped_by.items() if v == 1]
         print('grouping by:', group_cols)
