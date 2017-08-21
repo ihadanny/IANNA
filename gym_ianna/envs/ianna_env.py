@@ -6,7 +6,9 @@ import numpy as np, pandas as pd, os
 logger = logging.getLogger(__name__)
 
 def get_state_rep(df, grouped_by):
-    res = [df.shape[0]]
+    res = []
+    res.append(df.shape[0])
+    '''
     group_cols = [k for k, v in grouped_by.items() if v == 1]
     if len(group_cols) > 0:
         num_groups = df[group_cols].drop_duplicates().shape[0]
@@ -16,6 +18,7 @@ def get_state_rep(df, grouped_by):
     dist_counts = df.nunique().to_dict()
     for col in df.columns:
         res.append(dist_counts[col])
+    '''
     for col in df.columns:
         res.append(grouped_by[col])
     return res
@@ -42,6 +45,7 @@ class IANNAEnv(gym.Env):
         self.filename = os.path.join(os.path.dirname(__file__), '../../data/1.tsv')        
         print('reading input', self.filename)
         self.data = pd.read_csv(self.filename, sep = '\t', index_col=0)
+        #self.data = self.data.iloc[:, :5]
         grouped_by_all = {col: 1 for col in self.data.columns}
         high = np.array(get_state_rep(self.data, grouped_by_all))
         low = np.zeros_like(high)
@@ -69,7 +73,7 @@ class IANNAEnv(gym.Env):
     def _reward(self, obs):
         for s in self.states_already_seen:
             if (s == obs).all():
-                return 0.0
+                return -10.0
         return 1.0
         
     def _step(self, action):
@@ -104,12 +108,13 @@ class IANNAEnv(gym.Env):
         reward = self._reward(obs)
         self.states_already_seen.append(obs)
         self.step_num += 1
-        done = self.step_num >= 10
+        done = self.step_num >= self.data.columns.size
         return obs, reward, done, {}
 
     def _reset(self):
         #print('reading input', self.filename)
         self.data = pd.read_csv(self.filename, sep = '\t', index_col=0)
+        #self.data = self.data.iloc[:, :5]
         self.grouped_by = {col: 0 for col in self.data.columns}
         self.history = []
         self.states_already_seen = []
