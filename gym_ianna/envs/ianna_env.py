@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 def get_state_rep(df, grouped_by):
     res = []
     res.append(df.shape[0])
-    '''
     group_cols = [k for k, v in grouped_by.items() if v == 1]
     if len(group_cols) > 0:
         num_groups = df[group_cols].drop_duplicates().shape[0]
@@ -18,7 +17,6 @@ def get_state_rep(df, grouped_by):
     dist_counts = df.nunique().to_dict()
     for col in df.columns:
         res.append(dist_counts[col])
-    '''
     for col in df.columns:
         res.append(grouped_by[col])
     return res
