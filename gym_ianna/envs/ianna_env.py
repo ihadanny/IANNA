@@ -43,6 +43,8 @@ class IANNAEnv(gym.Env):
         self.filename = os.path.join(os.path.dirname(__file__), '../../data/1.tsv')        
         print('reading input', self.filename)
         self.data = pd.read_csv(self.filename, sep = '\t', index_col=0)
+        print(self.data.shape)
+        
         #self.data = self.data.iloc[:, :5]
         grouped_by_all = {col: 1 for col in self.data.columns}
         high = np.array(get_state_rep(self.data, grouped_by_all))
