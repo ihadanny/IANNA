@@ -73,7 +73,7 @@ class IANNAEnv(gym.Env):
     def _reward(self, obs):
         for s in self.states_already_seen:
             if (s == obs).all():
-                return -10.0
+                return -1.0
         return 1.0
         
     def _step(self, action):
