@@ -32,6 +32,7 @@ default_args = {
     
     #nn params
     ,'HIDDEN_SIZE': 20
+    ,'HIDDEN_LAYERS' : 1
     
     #discount rewards params
     ,'GAMMA' : 0.99
@@ -43,17 +44,21 @@ default_args = {
     ,'EPSILON' : 1e-6
     
     #learning params
-    ,'TOTAL_EPISODES' : 5000
+    ,'TOTAL_EPISODES' : 10000
     ,'BATCH_NUMBER' : 20
     ,'DISPLAY_FREQ' : 500
 }
 
 grid = []
-for i in range(4,15):
-    for _ in range(3): # repeat each experiment 3 times
-        grid.append({ 'OP_NUMBER' : i          # how many fields can we turn on
-        ,'STATE_INPUT_SIZE' : i   # how many fields can we observe 
-        ,'MAX_STEPS' : i          # how many steps must we play in each episode    
+for gamma in np.arange(0, 1, 0.1):
+    for _ in range(2):
+        grid.append({ 
+        'OP_NUMBER' : 10          # how many fields can we turn on
+        ,'STATE_INPUT_SIZE' : 10   # how many fields can we observe 
+        ,'MAX_STEPS' : 10          # how many steps must we play in each episode    
+        ,'HIDDEN_LAYERS': 2
+        ,'HIDDEN_SIZE': 10
+        ,'GAMMA': gamma
         })
 
 res_list = []
@@ -71,24 +76,29 @@ for g in grid:
     
     W1 = tf.get_variable(shape=[args['HIDDEN_SIZE'],args['STATE_INPUT_SIZE']],name='w1',
                           initializer=tf.contrib.layers.xavier_initializer())
-    W2 = tf.get_variable(shape=[args['HIDDEN_SIZE'],args['HIDDEN_SIZE']],name='w2',
-                          initializer=tf.contrib.layers.xavier_initializer())
+
+    if args['HIDDEN_LAYERS'] == 2:
+        W2 = tf.get_variable(shape=[args['HIDDEN_SIZE'],args['HIDDEN_SIZE']],name='w2',
+            initializer=tf.contrib.layers.xavier_initializer())
     W3 = tf.get_variable(shape=[args['OP_NUMBER'],args['HIDDEN_SIZE']],name='w3',
                           initializer=tf.contrib.layers.xavier_initializer())
     
     b1 = tf.get_variable(shape=[args['HIDDEN_SIZE'],1],name='b1',
                           initializer=tf.contrib.layers.xavier_initializer())
-    b2 = tf.get_variable(shape=[args['HIDDEN_SIZE'],1],name='b2',
-                          initializer=tf.contrib.layers.xavier_initializer())
+    if args['HIDDEN_LAYERS'] == 2:
+        b2 = tf.get_variable(shape=[args['HIDDEN_SIZE'],1],name='b2',
+            initializer=tf.contrib.layers.xavier_initializer())
     b3 = tf.get_variable(shape=[args['OP_NUMBER'],1],name='b3',
                           initializer=tf.contrib.layers.xavier_initializer())
     
     #Layers:
     x = tf.placeholder(tf.float32, shape=[args['STATE_INPUT_SIZE'],None],name='x')
     h1 = tf.tanh(tf.matmul(W1,x) + b1)
-    h2 = tf.tanh(tf.matmul(W2,h1) + b2)
-    y = tf.nn.softmax(tf.matmul(W3,h2) + b3,dim=0)
-    
+    if args['HIDDEN_LAYERS'] == 2:
+        h2 = tf.tanh(tf.matmul(W2,h1) + b2)
+        y = tf.nn.softmax(tf.matmul(W3,h2) + b3,dim=0)
+    else:
+        y = tf.nn.softmax(tf.matmul(W3,h1) + b3,dim=0)
     
     # In[6]:
     

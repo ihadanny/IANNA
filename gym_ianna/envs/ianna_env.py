@@ -71,10 +71,12 @@ class IANNAEnv(gym.Env):
         print("action space", self.action_space)
     
     def _reward(self, obs):
+        self.step_num += 1
+        done = self.step_num >= self.data.columns.size
         for s in self.states_already_seen:
             if (s == obs).all():
-                return -1.0
-        return 1.0
+                return True, -1.0
+        return done, 1.0
         
     def _step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
@@ -105,10 +107,8 @@ class IANNAEnv(gym.Env):
         obs = np.array(get_state_rep(self.data, self.grouped_by))
         assert self.observation_space.contains(obs)
         
-        reward = self._reward(obs)
+        done, reward = self._reward(obs)
         self.states_already_seen.append(obs)
-        self.step_num += 1
-        done = self.step_num >= self.data.columns.size
         return obs, reward, done, {}
 
     def _reset(self):
