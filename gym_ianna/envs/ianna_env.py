@@ -5,6 +5,37 @@ import numpy as np, pandas as pd, os
 
 logger = logging.getLogger(__name__)
 
+def get_keys():
+    KEYS=[ 'eth_dst', 'eth_src', 'highest_layer', 'info_line',
+           'ip_dst', 'ip_src', 'length', 'number',
+            'sniff_timestamp', 'tcp_dstport', 'tcp_srcport',
+           'tcp_stream']
+    return KEYS
+
+def get_state_rep_from_dicts(data_layer, granularity_layer):
+    ret = []
+    for metric in ['entropy', 'unique']:
+        for k in get_keys():
+            if pd.isnull(data_layer[k]) or metric not in data_layer[k]:
+                ret.append(0)
+            else: 
+                ret.append(data_layer[k][metric])
+    if granularity_layer is None:
+        ret.extend([0]*(3+2*len(get_keys())))
+    else:
+        ret.append(granularity_layer['ngroups'])
+        ret.append(granularity_layer['size_mean'])
+        ret.append(granularity_layer['size_var'])
+
+        for s in [set(granularity_layer['agg_attrs']), set(granularity_layer['group_attrs'])]:
+            for k in get_keys():
+                if k in s:
+                    ret.append(1)
+                else:
+                    ret.append(0)
+    return ret
+
+
 def get_state_rep(df, grouped_by):
     res = []
     res.append(df.shape[0])
