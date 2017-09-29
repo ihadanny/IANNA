@@ -25,10 +25,10 @@ ianna_env.__file__
 # In[4]:
 default_args = {
     'ENV': 'IANNA-v0'
-    ,'START_STATE_FROM': -15 # last 15 bits of the IANNA state are the groupby bits
-    ,'OP_NUMBER' : 4          # how many fields can we turn on
-    ,'STATE_INPUT_SIZE' : 4   # how many fields can we observe 
-    ,'MAX_STEPS' : 4          # how many steps must we play in each episode    
+    ,'START_STATE_FROM': 0    # last 15 bits of the IANNA state are the groupby bits
+    ,'OP_NUMBER' : 15          # how many fields can we turn on
+    ,'STATE_INPUT_SIZE' : 51   # how many fields can we observe 
+    ,'MAX_STEPS' : 5          # how many steps must we play in each episode    
     
     #nn params
     ,'HIDDEN_SIZE': 20
@@ -53,12 +53,7 @@ grid = []
 for gamma in np.arange(0, 1, 0.1):
     for _ in range(2):
         grid.append({ 
-        'OP_NUMBER' : 10          # how many fields can we turn on
-        ,'STATE_INPUT_SIZE' : 10   # how many fields can we observe 
-        ,'MAX_STEPS' : 10          # how many steps must we play in each episode    
-        ,'HIDDEN_LAYERS': 2
-        ,'HIDDEN_SIZE': 10
-        ,'GAMMA': gamma
+        'GAMMA': gamma
         })
 
 res_list = []

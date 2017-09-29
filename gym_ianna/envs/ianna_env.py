@@ -2,6 +2,8 @@ import logging
 import gym
 from gym import spaces
 import numpy as np, pandas as pd, os
+import scipy as sp
+from scipy import stats, optimize, interpolate
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +13,20 @@ def get_keys():
             'sniff_timestamp', 'tcp_dstport', 'tcp_srcport',
            'tcp_stream']
     return KEYS
+
+def get_data_column_measures(column):
+    #for each column, compute its: (1) normalized value entropy (2)Null count (3)Unique values count
+    B=20
+    u = column.nunique()
+    n = column.isnull().sum()
+    column_na=column.dropna()
+    size=len(column)
+    if column.dtype=='O':
+        h=sp.stats.entropy(column_na.value_counts().values)/np.log(len(column.dropna()))
+    else:
+        h= sp.stats.entropy(np.histogram(column_na,bins=B)[0])/np.log(B)
+    return {"unique":u/(size-n),"nulls":n/size,"entropy":h}
+
 
 def get_state_rep_from_dicts(data_layer, granularity_layer):
     ret = []
@@ -35,29 +51,62 @@ def get_state_rep_from_dicts(data_layer, granularity_layer):
                     ret.append(0)
     return ret
 
-
-def get_state_rep(df, grouped_by):
-    res = []
-    res.append(df.shape[0])
-    group_cols = [k for k, v in grouped_by.items() if v == 1]
-    if len(group_cols) > 0:
-        num_groups = df[group_cols].drop_duplicates().shape[0]
-    else:
-        num_groups = df.shape[0]
-    res.append(num_groups)
-    dist_counts = df.nunique().to_dict()
-    for col in df.columns:
-        res.append(dist_counts[col])
-    for col in df.columns:
-        res.append(grouped_by[col])
-    return res
-
-
+    
 class IANNAEnv(gym.Env):
 
     metadata = {
         'render.modes': ['human'],
     }
+ 
+    def get_grouping_measures(self, df, group_obj, agg_df):
+        """"number" is the unique identifier of a packet, 
+        therefore we use it to count the size of each group , 
+        although this may feel hacky"""
+        if group_obj is None or agg_df is None:
+            return None 
+        B=20
+        groups_num=len(group_obj)
+        if len(agg_df.number) == 0:
+            # no grouping
+            size_var, size_mean = df.shape[0], df.shape[0]
+        else:
+            size_var = np.var(agg_df.number/np.sum(agg_df.number))
+            size_mean = np.mean(agg_df.number)
+        group_keys=group_obj.keys
+        agg_keys=list(agg_df.keys()).remove("number")
+        agg_nve_dict={}
+        if agg_keys is not None:
+            for ak in agg_keys:
+                agg_nve_dict[ak]=sp.stats.entropy(np.histogram(agg_df[ak],bins=B)[0])/np.log(B)
+        return {"group_attrs":group_keys,"agg_attrs":agg_nve_dict,"ngroups":groups_num,"size_var":size_var,"size_mean":size_mean}
+
+    def get_groupby_df(self, df, grouped_by):
+        #Given a dataframe, the grouping and aggregations - result (i) the aggregated dataframe, and (ii)the groupby element
+
+        grouping_attrs = [k for k, v in grouped_by.items() if v == 1]
+     
+        if not grouping_attrs:
+            return None,None
+        
+        df_gb= df.groupby(grouping_attrs)
+        
+        agg_dict={'number':len} #all group-by gets the count by default in REACT-UI
+        agg_df = df_gb.agg(agg_dict)
+        return df_gb, agg_df
+           
+    def calc_gran_layer(self, df, grouped_by):
+        group_obj,agg_df = self.get_groupby_df(df, grouped_by)
+        r = self.get_grouping_measures(df, group_obj,agg_df)
+        #print("calc_gran_layer", r)
+        return r
+
+    def calc_data_layer(self, df):
+        r = df[get_keys()].apply(get_data_column_measures).to_dict()
+        #print("calc_data_layer", r)
+        return r
+
+    def get_state_rep(self, df, grouped_by):
+        return get_state_rep_from_dicts(self.calc_data_layer(df), self.calc_gran_layer(df, grouped_by))
     
     def __init__(self):
 
@@ -71,17 +120,20 @@ class IANNAEnv(gym.Env):
         #   number of groups
         #   distinct values of every column
         #   grouped_by indication for each column
-        self.filename = os.path.join(os.path.dirname(__file__), '../../data/1.tsv')        
+        self.filename = os.path.join(os.path.dirname(__file__), '../../Data_manipulation/raw_datasets/1.tsv')        
         print('reading input', self.filename)
         self.data = pd.read_csv(self.filename, sep = '\t', index_col=0)
         print(self.data.shape)
         
-        #self.data = self.data.iloc[:, :5]
-        grouped_by_all = {col: 1 for col in self.data.columns}
-        high = np.array(get_state_rep(self.data, grouped_by_all))
-        low = np.zeros_like(high)
-        print("observation space from", low, "to", high, "shape", high.shape)
-        self.observation_space = spaces.Box(low, high)        
+        
+        grouped_by_all = np.array(self.get_state_rep(self.data, {col: 1 for col in self.data.columns}))
+        grouped_by_none = np.array(self.get_state_rep(self.data, {col: 0 for col in self.data.columns}))
+        print("by_all", grouped_by_all)
+        print("by_none", grouped_by_none)
+        self.high = np.maximum(grouped_by_all, grouped_by_none)       
+        self.low = np.zeros_like(self.high)
+        print("observation space from", self.low, "to", self.high, "shape", self.high.shape)
+        self.observation_space = spaces.Box(self.low, self.high)        
 
         #    e.g. Nintendo Game Controller
         #    - Can be conceptualized as 3 discrete action spaces:
@@ -122,7 +174,7 @@ class IANNAEnv(gym.Env):
             if operator_type == 'filter':
                 filter_operator = FILTER_OPERATOR_LOOKUP[action[2]]
                 operand = 1.0 * self.data[col].count() * action[3]/10
-                print('filter', col, filter_operator, operand)
+                #print('filter', col, filter_operator, operand)
                 if filter_operator == "LT":
                     self.data = self.data[self.data[col].rank() < operand]
                 elif filter_operator == "GT":
@@ -135,7 +187,8 @@ class IANNAEnv(gym.Env):
             else:
                 raise Exception("unknown operator type: " + operator_type)
         
-        obs = np.array(get_state_rep(self.data, self.grouped_by))
+        obs = np.array(self.get_state_rep(self.data, self.grouped_by))
+        #print(obs, obs.shape)
         assert self.observation_space.contains(obs)
         
         done, reward = self._reward(obs)
@@ -150,8 +203,9 @@ class IANNAEnv(gym.Env):
         self.history = []
         self.states_already_seen = []
         self.step_num = 0
-        obs = np.array(get_state_rep(self.data, self.grouped_by))
+        obs = np.array(self.get_state_rep(self.data, self.grouped_by))
         assert self.observation_space.contains(obs)
+        #print(obs, obs.shape)
         return obs
 
     def _render(self, mode='human', close=False):
